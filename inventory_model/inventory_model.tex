@@ -72,6 +72,7 @@ Once we have the probability distribution, we can calculate the cumulative proba
 \end{figure}
 
 \subsection{Monte Carlo Inventory Algorithm}
+
 Using the cumulative probability distribution, we can get a average cost histogram by running a Monte Carlo simulation 1000 times. The following parameters are used in the simulation:
 \begin{itemize}
     \item Delivery Quantity Q = 800 gallons
@@ -81,16 +82,45 @@ Using the cumulative probability distribution, we can get a average cost histogr
     \item Storage cost s = \$ 0.001 per gallon per day
 \end{itemize}
 
+\subsection{Immediate Replenishment Model}
+This model assumes that the we immediately order a delivery the next day when the inventory is out of stock. Obviously, this model does not care about the days for which the water tank inventory is empty.
 Using median demand (35 gallons) and average demand (42.34 gallons) as the basic test cases, we can get the average cost per day as 10.03 and 8.69 respectively.
 
 \begin{figure}[H]
     \centering
     \includegraphics[width=0.5\textwidth]{cost_histogram}
-    \caption{Histogram of average cost per day from Monte Carlo simulation}
+    \caption{Histogram of average cost per day from Monte Carlo simulation for immediately Replenishment}
     \label{average_cost}
 \end{figure}
 
+\subsection{Periodic Order Model}
+This model assumes that we order a delivery every T days regardless of the inventory level. We can get the average cost and the number of days the storage is empty plotted.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{periodic_cost_histogram}
+    \caption{Histogram of average cost per day from Monte Carlo simulation for periodic order model}
+    \label{average_cost_periodic}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{periodic_emptydays_histogram}
+    \caption{Histogram of empty days from Monte Carlo simulation for periodic order model}
+    \label{empty_days}
+\end{figure}
+
+\subsection{Optimization}
+In order to optimize the cost without any number of days the storage is empty, we explore different periods T to minimize the cost. I find out the optimal T is 18 days with the average cost of 6.06 dollars per day according to the figure.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\textwidth]{feasible_T_vs_cost}
+    \caption{Feasible T vs Cost}
+    \label{feasible_T_vs_cost}
+\end{figure}
+
 \section{Conclusion}
-I created a basic inventory model based on the given data. The model can be further improved by using more sophisticated interpolation methods or by incorporating additional factors into the simulation.
+I created a basic inventory model based on the given data. The model can be further improved by using more sophisticated interpolation methods or by incorporating additional factors into the simulation. For further reference see \href{https://github.com/yijiazho/data-analysis-hu/blob/main/inventory_model/model.py}{My personal Github} here.
 
 \end{document}

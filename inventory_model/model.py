@@ -82,8 +82,8 @@ def monte_carlo(Q, T, d, s, N, q_func):
         q_func (function): demand generator (e.g., random_q or median_q)
     """
     K = N # days remaining
-    I = 0 # inventory storage
-    C = 0 # total cost
+    I = 0.0 # inventory storage
+    C = 0.0 # total cost
     # flag for exiting the loop
     flag = False
 
@@ -145,3 +145,160 @@ def plot_cost_histogram(Q, T, d, s, N, q_func, runs=1000, bins=30):
     plt.show()
 
 plot_cost_histogram(800, 15, 92.0, 0.001, 365, random_q, runs=1000)
+
+def monte_carlo_periodic(Q, T, d, s, N, q_func):
+    """
+    Periodic-review Monte Carlo:
+    - Order Q units every T days (no immediate reorder on stockout).
+    - Lost sales when demand exceeds inventory (no backorders/penalty).
+    - Holding cost charged on end-of-day inventory.
+    - Returns (average_cost_per_day, empty_days_count).
+
+    Parameters:
+        Q (float): delivery quantity
+        T (int): time between deliveries (cycle length)
+        d (float): fixed delivery cost per order
+        s (float): holding cost per unit per day
+        N (int): total number of days in horizon
+        q_func (callable): demand generator (e.g., random_q / median_q / average_q)
+
+    Returns:
+        (float, int): (average cost per day, number of days with zero inventory)
+    """
+    K = N
+    I = 0.0     # on-hand inventory
+    C = 0.0     # total cost
+    empty_days = 0
+
+    while K > 0:
+        # Place the periodic order at the start of each cycle
+        I = I + Q
+        C = C + d
+
+        cycle_days = min(T, K)
+
+        for _ in range(cycle_days):
+            q = q_func()
+            I = I - q
+
+            if I <= 0:
+                # Stockout / lost sales; remain at zero until next order
+                I = 0.0
+                empty_days += 1
+            else:
+                C = C + I * s
+
+            K = K - 1
+
+    return C / N, empty_days
+
+total = 0
+total_empty = 0
+for i in range(1000):
+    avg_cost, empty_days = monte_carlo_periodic(800, 15, 92.0, 0.001, 365, median_q)
+    total += avg_cost
+    total_empty += empty_days
+print("Average cost based on median demand:", total / 1000)
+print("Average empty days based on median demand:", total_empty / 1000)
+
+total = 0
+for i in range(1000):
+    avg_cost, empty_days = monte_carlo_periodic(800, 15, 92.0, 0.001, 365, average_q)
+    total += avg_cost
+    total_empty += empty_days
+print("Average cost based on average demand:", total / 1000)
+print("Average empty days based on average demand:", total_empty / 1000)
+
+
+def plot_periodic_histograms(Q, T, d, s, N, q_func, runs=1000, bins_cost=30, bins_empty=30):
+    """
+    Run the periodic-review simulation multiple times and plot:
+    1) Histogram of average daily cost
+    2) Histogram of empty-day counts
+    """
+    results_cost = []
+    results_empty = []
+
+    for _ in range(runs):
+        avg_cost, empty_days = monte_carlo_periodic(Q, T, d, s, N, q_func)
+        results_cost.append(avg_cost)
+        results_empty.append(empty_days)
+
+    # Cost histogram
+    plt.figure()
+    plt.hist(results_cost, bins=bins_cost, edgecolor='black', alpha=0.7)
+    plt.xlabel("Average Daily Cost")
+    plt.ylabel("Number of Occurrences")
+    plt.title(f"Periodic Policy: Avg Daily Cost over {runs} runs")
+    plt.grid(axis='y', alpha=0.75)
+    plt.savefig('inventory_model/periodic_cost_histogram.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+    # Empty-days histogram
+    plt.figure()
+    plt.hist(results_empty, bins=bins_empty, edgecolor='black', alpha=0.7)
+    plt.xlabel("Empty Days (out of N)")
+    plt.ylabel("Number of Occurrences")
+    plt.title(f"Periodic Policy: Empty Days over {runs} runs")
+    plt.grid(axis='y', alpha=0.75)
+    plt.savefig('inventory_model/periodic_emptydays_histogram.png', dpi=300, bbox_inches='tight')
+    plt.show()
+
+plot_periodic_histograms(800, 15, 92.0, 0.001, 365, random_q, runs=1000)
+
+
+def find_best_T_no_stockout(Q, d, s, N, q_func, runs=500, plot=True):
+    T_values = range(1, 33) # at most 40 days as 800/25 = 32
+
+    feasible_T = []
+    feasible_costs = []
+
+    for T in T_values:
+        total_cost = 0.0
+        feasible = True
+
+        # Early rejection: if even one run has empty days, this T is infeasible.
+        for _ in range(runs):
+            avg_cost, empty_days = monte_carlo_periodic(Q, T, d, s, N, q_func)
+            if empty_days > 0:
+                feasible = False
+                break
+            total_cost += avg_cost
+
+        if feasible:
+            mean_cost = total_cost / runs
+            feasible_T.append(T)
+            feasible_costs.append(mean_cost)
+
+    # Choose the feasible T with the lowest mean cost
+    if feasible_T:
+        idx = int(np.argmin(feasible_costs))
+        best_T = int(feasible_T[idx])
+        best_cost = float(feasible_costs[idx])
+    else:
+        best_T, best_cost = None, None
+
+    # Optional visualization
+    if plot:
+        plt.figure()
+        if feasible_T:
+            plt.plot(feasible_T, feasible_costs, marker='o')
+            plt.title(f"Feasible T (zero empty days across {runs} runs)")
+            plt.xlabel("Period T (days)")
+            plt.ylabel("Mean Average Daily Cost")
+            plt.grid(True, alpha=0.6)
+        else:
+            plt.title("No feasible T with zero empty days")
+        plt.savefig('inventory_model/feasible_T_vs_cost.png', dpi=300, bbox_inches='tight')
+        plt.show()
+
+    return {
+        'best_T': best_T,
+        'best_cost': best_cost,
+        'feasible_T': feasible_T,
+        'feasible_costs': feasible_costs,
+    }
+
+result = find_best_T_no_stockout(800, 92.0, 0.001, 365, average_q, runs=500, plot=True)
+print("Best T:", result['best_T'])
+print("Best mean cost:", result['best_cost'])

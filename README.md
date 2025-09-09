@@ -1,1 +1,1 @@
-# data-analysis-hu
+This project is a combination of data analysis, models, and papers.
