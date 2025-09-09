@@ -4,3 +4,7 @@ __pycache__/
 env/
 venv/
 data/
+*.pdf
+*.aux
+*.log
+*.out
