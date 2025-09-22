@@ -17,9 +17,9 @@ Outputs (written to --outdir):
   - movies_facts_denorm.csv   (per-movie skinny fact table w/ derived fields and bin labels)
 
 Usage:
-  python make_movie_denorms.py movies.csv --outdir denorm_out \
+  python make_movie_denorms.py movies.csv --outdir output \
     --rating-bin-width 1.0 \
-    --revenue-bins 0 1000000 10000000 50000000 100000000 500000000 1000000000 inf \
+    --revenue-bins 0 1e5 1e6 1e7 1e8 1e9 inf \
     --runtime-bins 0 80 100 120 140 160 200 inf
 """
 import argparse
@@ -35,14 +35,14 @@ import pandas as pd
 
 def _parse_args():
     p = argparse.ArgumentParser(description="Create denormalized CSV rollups from a movies CSV.")
-    p.add_argument("csv_path", help="Path to input movies CSV")
+    p.add_argument("csv_path", default="sample.csv", help="Path to input movies CSV")
     p.add_argument("--outdir", default="denorm_out", help="Directory to write outputs")
     p.add_argument("--rating-bin-width", type=float, default=1.0,
                    help="Width of rating windows in points (e.g., 1.0 makes 7.00–7.99)")
     p.add_argument("--min-rating", type=float, default=0.0)
     p.add_argument("--max-rating", type=float, default=10.0)
     p.add_argument("--revenue-bins", type=float, nargs="+",
-                   default=[0, 1e6, 10e6, 50e6, 100e6, 500e6, 1e9, math.inf],
+                   default=[0, 1e5, 1e6, 1e7, 1e8, 5e8, 1e9, 5e9, math.inf],
                    help="Edges for revenue bins (USD). Use 'inf' for open-ended upper bound.")
     p.add_argument("--runtime-bins", type=float, nargs="+",
                    default=[0, 80, 100, 120, 140, 160, 200, math.inf],
@@ -124,7 +124,7 @@ def load_and_clean(csv_path: str) -> pd.DataFrame:
         sep=",",
         quotechar='"',
         escapechar="\\",     # accept \" within quoted text
-        doublequote=False,   # don't require "" to escape "
+        doublequote=True,    # use standard CSV escaping with ""
         on_bad_lines="skip", # skip truly malformed lines instead of crashing
         dtype=str,
         keep_default_na=False,
@@ -148,6 +148,13 @@ def load_and_clean(csv_path: str) -> pd.DataFrame:
     if "release_date" in df.columns:
         df["release_date"] = pd.to_datetime(df["release_date"], errors="coerce")
         df["release_year"] = df["release_date"].dt.year
+
+        # Filter out unrealistic release years (before cinema invention and too far in future)
+        # Keep years from 1888 (motion pictures invented) to current year + 10
+        current_year = pd.Timestamp.now().year
+        valid_year_mask = (df["release_year"] >= 1888) & (df["release_year"] <= current_year + 10)
+        df.loc[~valid_year_mask, "release_year"] = pd.NA
+
         df["release_decade"] = (df["release_year"] // 10 * 10).astype("Int64")
 
     if "adult" in df.columns:
@@ -178,6 +185,9 @@ def add_bins(df: pd.DataFrame, rating_bin_width: float, min_rating: float, max_r
     rating_edges = list(np.arange(min_rating, max_rating + rating_bin_width, rating_bin_width))
     if rating_edges[-1] < max_rating:
         rating_edges.append(max_rating)
+    # Add a tiny bit to the last edge to include max_rating (e.g., 10.0) in the last bin
+    if rating_edges[-1] == max_rating:
+        rating_edges[-1] = max_rating + 0.001
     rating_labels = _format_left_closed_interval(rating_edges, decimals=2)
     df["rating_bin"] = pd.cut(
         df["vote_average"], bins=rating_edges, right=False, include_lowest=True, labels=rating_labels
@@ -224,7 +234,7 @@ def write_rollups(df: pd.DataFrame, outdir: Path):
             .rename_axis("rating_bin")
             .reset_index(name="movie_count")
         )
-        if pd.api.types.is_categorical_dtype(df["rating_bin"]):
+        if isinstance(df["rating_bin"].dtype, pd.CategoricalDtype):
             out["order"] = out["rating_bin"].cat.codes
             out = out.sort_values("order").drop(columns=["order"])
         out.to_csv(outdir / "movies_by_rating_bin.csv", index=False)
@@ -237,7 +247,7 @@ def write_rollups(df: pd.DataFrame, outdir: Path):
             .rename_axis("revenue_bin")
             .reset_index(name="movie_count")
         )
-        if pd.api.types.is_categorical_dtype(df["revenue_bin"]):
+        if isinstance(df["revenue_bin"].dtype, pd.CategoricalDtype):
             out["order"] = out["revenue_bin"].cat.codes
             out = out.sort_values("order").drop(columns=["order"])
         out.to_csv(outdir / "movies_by_revenue_bin.csv", index=False)
@@ -250,7 +260,7 @@ def write_rollups(df: pd.DataFrame, outdir: Path):
             .rename_axis("runtime_bin")
             .reset_index(name="movie_count")
         )
-        if pd.api.types.is_categorical_dtype(df["runtime_bin"]):
+        if isinstance(df["runtime_bin"].dtype, pd.CategoricalDtype):
             out["order"] = out["runtime_bin"].cat.codes
             out = out.sort_values("order").drop(columns=["order"])
         out.to_csv(outdir / "movies_by_runtime_bin.csv", index=False)
